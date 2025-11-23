@@ -285,8 +285,15 @@ void EnergyData::write(gmx_mdoutf* outf, Step step, Time time, bool writeTraject
 
     // energyOutput_->printAnnealingTemperatures(writeLog ? fplog_ : nullptr, groups_, &(inputrec_->opts));
     Awh* awh = nullptr;
+    
+    // Obtenir les pointeurs vers les positions, vitesses et boîte pour l'observable personnalisée
+    const auto* x = as_rvec_array(statePropagatorData_->constPositionsView().paddedArrayRef().data());
+    const auto* v = as_rvec_array(statePropagatorData_->constVelocitiesView().paddedArrayRef().data());
+    const auto* box = statePropagatorData_->constBox();
+    
     energyOutput_->printStepToEnergyFile(
-            mdoutf_get_fp_ene(outf), writeTrajectory, do_dr, do_or, writeLog ? fplog_ : nullptr, step, time, fcd_, awh);
+            mdoutf_get_fp_ene(outf), writeTrajectory, do_dr, do_or, writeLog ? fplog_ : nullptr, step, time, fcd_, awh,
+            x, v, &top_global_, box);
 }
 
 void EnergyData::addToForceVirial(const tensor virial, Step step)

@@ -232,7 +232,12 @@ public:
                                int64_t    step,
                                double     time,
                                t_fcdata*  fcd,
-                               gmx::Awh*  awh);
+                               gmx::Awh*  awh,
+                               // NOUVEAUX PARAMÈTRES pour le calcul :
+                               const rvec*             x,      // Positions atomiques
+                               const rvec*             v,      // Vitesses (optionnel)
+                               const gmx_mtop_t*       mtop,   // Topologie
+                               const matrix            box);   // Boîte de simulation
 
     /*! \brief Print reference temperatures for annealing groups.
      *
@@ -420,6 +425,10 @@ private:
 
     //! For tracking the conserved or total energy
     std::unique_ptr<EnergyDriftTracker> conservedEnergyTracker_;
+
+    //! Add custom observable to energy output (real and imaginary parts)
+    int iCustomEnergyReal_ = -1;
+    int iCustomEnergyImag_ = -1;
 };
 
 } // namespace gmx

@@ -1986,7 +1986,12 @@ void gmx::LegacySimulator::do_md()
                                                    step,
                                                    t,
                                                    fr_->fcdata.get(),
-                                                   awh.get());
+                                                   awh.get(),
+                                                   // NOUVEAUX ARGUMENTS :
+                                                   state_->x.rvec_array(),    // Positions
+                                                   state_->v.rvec_array(),    // Vitesses
+                                                   &topGlobal_,               // Topologie
+                                                   state_->box);              // Boîte
             }
             if (do_log && ((ir->bDoAwh && awh->hasFepLambdaDimension()) || ir->fepvals->delta_lambda != 0))
             {

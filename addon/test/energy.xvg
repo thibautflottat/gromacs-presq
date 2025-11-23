@@ -1,0 +1,28 @@
+# This file was created Sun Nov 23 20:31:00 2025
+# Created by:
+#    :-) GROMACS - gmx energy, 2024.2-dev-20251123-270caaf-dirty-unknown (-:
+# 
+# Executable:   /Users/thibaut/dev/gromacs-presq/addon/test/../../build/bin/gmx
+# Data prefix:  /Users/thibaut/dev/gromacs-presq (source tree)
+# Working dir:  /Users/thibaut/dev/gromacs-presq/addon/test
+# Command line:
+#   gmx energy -f test.edr
+# gmx energy is part of G R O M A C S:
+#
+# GRowing Old MAkes el Chrono Sweat
+#
+@    title "GROMACS Energies"
+@    xaxis  label "Time (ps)"
+@    yaxis  label "(kJ/mol)"
+@TYPE xy
+@ view 0.15, 0.15, 0.75, 0.85
+@ legend on
+@ legend box on
+@ legend loctype view
+@ legend 0.78, 0.8
+@ legend length 2
+@ s0 legend "Custom-Real"
+@ s1 legend "Custom-Imag"
+    0.000000  -426.718842  2217.054443
+    0.050000  -426.058746  2217.555664
+    0.100000  -435.570801  2216.607910

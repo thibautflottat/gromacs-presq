@@ -1,0 +1,29 @@
+; Test MDP file for custom complex observable
+integrator               = md
+dt                       = 0.001
+nsteps                   = 100
+
+nstlog                   = 10
+nstenergy                = 50
+nstxout                  = 50
+
+; Temperature and pressure
+tcoupl                   = v-rescale
+tc-grps                  = System
+tau_t                    = 0.1
+ref_t                    = 300
+
+; Constraints
+constraints              = h-bonds
+constraint-algorithm     = lincs
+
+; Electrostatics
+coulombtype              = PME
+rcoulomb                 = 1.0
+
+; Van der Waals
+vdwtype                  = Cut-off
+rvdw                     = 1.0
+
+; Periodic boundary conditions
+pbc                      = xyz

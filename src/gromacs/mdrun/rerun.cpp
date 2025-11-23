@@ -831,7 +831,12 @@ void gmx::LegacySimulator::do_rerun()
                                                step,
                                                t,
                                                fr_->fcdata.get(),
-                                               awh);
+                                               awh,
+                                               // NOUVEAUX ARGUMENTS :
+                                               state_->x.rvec_array(),    // Positions
+                                               state_->v.rvec_array(),    // Vitesses
+                                               &topGlobal_,               // Topologie
+                                               state_->box);              // Boîte
 
             if (ir->bPull)
             {

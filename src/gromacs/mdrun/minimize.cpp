@@ -1429,8 +1429,19 @@ void LegacySimulator::do_cg()
                                          constr_);
 
         EnergyOutput::printHeader(fpLog_, step, step);
-        energyOutput.printStepToEnergyFile(
-                mdoutf_get_fp_ene(outf), TRUE, FALSE, FALSE, fpLog_, step, step, fr_->fcdata.get(), nullptr);
+        energyOutput.printStepToEnergyFile(mdoutf_get_fp_ene(outf),
+                                           TRUE,
+                                           FALSE,
+                                           FALSE,
+                                           fpLog_,
+                                           step,
+                                           step,
+                                           fr_->fcdata.get(),
+                                           nullptr,
+                                           s_min->s.x.rvec_array(),
+                                           nullptr,
+                                           &topGlobal_,
+                                           s_min->s.box);
     }
 
     /* Estimate/guess the initial stepsize */
@@ -1898,7 +1909,11 @@ void LegacySimulator::do_cg()
                                                step,
                                                step,
                                                fr_->fcdata.get(),
-                                               nullptr);
+                                               nullptr,
+                                               s_min->s.x.rvec_array(),
+                                               nullptr,
+                                               &topGlobal_,
+                                               s_min->s.box);
         }
 
         /* Send energies and positions to the IMD client if bIMD is TRUE. */
@@ -1948,7 +1963,11 @@ void LegacySimulator::do_cg()
                                                step,
                                                step,
                                                fr_->fcdata.get(),
-                                               nullptr);
+                                               nullptr,
+                                               s_min->s.x.rvec_array(),
+                                               nullptr,
+                                               &topGlobal_,
+                                               s_min->s.box);
         }
     }
 
@@ -2193,8 +2212,19 @@ void LegacySimulator::do_lbfgs()
                                          constr_);
 
         EnergyOutput::printHeader(fpLog_, step, step);
-        energyOutput.printStepToEnergyFile(
-                mdoutf_get_fp_ene(outf), TRUE, FALSE, FALSE, fpLog_, step, step, fr_->fcdata.get(), nullptr);
+        energyOutput.printStepToEnergyFile(mdoutf_get_fp_ene(outf),
+                                           TRUE,
+                                           FALSE,
+                                           FALSE,
+                                           fpLog_,
+                                           step,
+                                           step,
+                                           fr_->fcdata.get(),
+                                           nullptr,
+                                           ems.s.x.rvec_array(),
+                                           nullptr,
+                                           &topGlobal_,
+                                           ems.s.box);
     }
 
     /* Set the initial step.
@@ -2730,7 +2760,11 @@ void LegacySimulator::do_lbfgs()
                                                step,
                                                step,
                                                fr_->fcdata.get(),
-                                               nullptr);
+                                               nullptr,
+                                               ems.s.x.rvec_array(),
+                                               nullptr,
+                                               &topGlobal_,
+                                               ems.s.box);
         }
 
         /* Send x and E to IMD client, if bIMD is TRUE. */
@@ -2779,7 +2813,11 @@ void LegacySimulator::do_lbfgs()
                                            step,
                                            step,
                                            fr_->fcdata.get(),
-                                           nullptr);
+                                           nullptr,
+                                           ems.s.x.rvec_array(),
+                                           nullptr,
+                                           &topGlobal_,
+                                           ems.s.box);
     }
 
     /* Print some stuff... */
@@ -3022,7 +3060,11 @@ void LegacySimulator::do_steep()
                                                    count,
                                                    count,
                                                    fr_->fcdata.get(),
-                                                   nullptr);
+                                                   nullptr,
+                                                   s_min->s.x.rvec_array(),
+                                                   nullptr,
+                                                   &topGlobal_,
+                                                   s_min->s.box);
                 fflush(fpLog_);
             }
         }

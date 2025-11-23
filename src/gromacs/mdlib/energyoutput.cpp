@@ -45,6 +45,7 @@
 #include "energyoutput.h"
 
 #include <cfloat>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -536,6 +537,19 @@ EnergyOutput::EnergyOutput(ener_file*                fp_ene,
         sfree(grpnms[i]);
     }
     sfree(grpnms);
+
+    // Ajouter l'observable personnalisée complexe AVANT do_enxnms()
+    if (true)  // Remplacez par votre condition (ex: inputrec.opts.custom_observable)
+    {
+        // Créer deux termes : un pour la partie réelle, un pour la partie imaginaire
+        const char* custom_names[2];
+        custom_names[0] = "Custom-Real";
+        custom_names[1] = "Custom-Imag";
+        
+        // Réserver l'espace pour les deux composantes
+        iCustomEnergyReal_ = get_ebin_space(ebin_, 1, &custom_names[0], unit_energy);
+        iCustomEnergyImag_ = get_ebin_space(ebin_, 1, &custom_names[1], unit_energy);
+    }
 
     /* Note that fp_ene should be valid on the main rank and null otherwise */
     if (fp_ene != nullptr && startingBehavior != StartingBehavior::RestartWithAppending)
@@ -1150,6 +1164,79 @@ void EnergyOutput::printHeader(FILE* log, int64_t steps, double time)
             time);
 }
 
+namespace
+{
+/*! \brief Calcule une observable personnalisée complexe (lourd)
+ *
+ * Cette fonction n'est appelée QUE lors de l'écriture dans .edr,
+ * pas à chaque pas de temps.
+ *
+ * \param[in] x     Positions atomiques
+ * \param[in] v     Vitesses atomiques (peut être nullptr si non utilisé)
+ * \param[in] mtop  Topologie moléculaire
+ * \param[in] box   Boîte de simulation
+ * \param[in] natoms Nombre d'atomes
+ * \param[out] realPart  Partie réelle de l'observable
+ * \param[out] imagPart  Partie imaginaire de l'observable
+ */
+void calculateComplexObservable(const rvec*       x,
+                               const rvec*       v,
+                               const gmx_mtop_t* mtop,
+                               const matrix      box,
+                               int               natoms,
+                               real*             realPart,
+                               real*             imagPart)
+{
+    real resultReal = 0.0;
+    real resultImag = 0.0;
+    
+    // EXEMPLE 1 : Observable complexe basée sur les positions
+    // Par exemple : facteur de structure S(q) = sum_i exp(i*q·r_i)
+    // Ici on utilise q = (1, 0, 0) pour simplifier
+    const real qx = 1.0;  // Vecteur d'onde
+    
+    for (int i = 0; i < natoms; i++)
+    {
+        // Calcul de exp(i*q·r) = cos(q·r) + i*sin(q·r)
+        real phase = qx * x[i][XX];  // q·r simplifié
+        resultReal += std::cos(phase);  // Partie réelle
+        resultImag += std::sin(phase);  // Partie imaginaire
+    }
+    
+    // EXEMPLE 2 : Calcul basé sur les paires d'atomes (O(N²) - très lourd!)
+    // for (int i = 0; i < natoms - 1; i++)
+    // {
+    //     for (int j = i + 1; j < natoms; j++)
+    //     {
+    //         rvec dx;
+    //         pbc_dx(/* pbc structure */, x[i], x[j], dx);
+    //         real r = std::sqrt(norm2(dx));
+    //         real phase = qx * dx[XX];
+    //         resultReal += std::cos(phase) / r;
+    //         resultImag += std::sin(phase) / r;
+    //     }
+    // }
+    
+    // EXEMPLE 3 : Calcul basé sur les vitesses (pour observable complexe)
+    // if (v != nullptr)
+    // {
+    //     for (int i = 0; i < natoms; i++)
+    //     {
+    //         real vx = v[i][XX];
+    //         resultReal += vx * std::cos(vx);  // Partie réelle fonction de v
+    //         resultImag += vx * std::sin(vx);  // Partie imaginaire fonction de v
+    //     }
+    // }
+    
+    // EXEMPLE 4 : Module et phase (représentation polaire)
+    // real modulus = std::sqrt(resultReal * resultReal + resultImag * resultImag);
+    // real phase = std::atan2(resultImag, resultReal);
+    
+    *realPart = resultReal;
+    *imagPart = resultImag;
+}
+} // namespace
+
 void EnergyOutput::printStepToEnergyFile(ener_file* fp_ene,
                                          bool       bEne,
                                          bool       bDR,
@@ -1158,8 +1245,24 @@ void EnergyOutput::printStepToEnergyFile(ener_file* fp_ene,
                                          int64_t    step,
                                          double     time,
                                          t_fcdata*  fcd,
-                                         gmx::Awh*  awh)
+                                         gmx::Awh*  awh,
+                                         const rvec*       x,
+                                         const rvec*       v,
+                                         const gmx_mtop_t* mtop,
+                                         const matrix      box)
 {
+    // IMPORTANT : Calculer l'observable personnalisée AVANT d'initialiser le frame
+    // car fr.ener pointe vers ebin_->e, donc toute modification après doit être faite avant
+    if (bEne && iCustomEnergyReal_ >= 0 && x != nullptr && mtop != nullptr)
+    {
+        real realPart, imagPart;
+        calculateComplexObservable(x, v, mtop, box, mtop->natoms, &realPart, &imagPart);
+        
+        // Ajouter les deux composantes séparément
+        add_ebin(ebin_, iCustomEnergyReal_, 1, &realPart, false);
+        add_ebin(ebin_, iCustomEnergyImag_, 1, &imagPart, false);
+    }
+    
     t_enxframe fr;
     init_enxframe(&fr);
     fr.t       = time;
@@ -1495,3 +1598,65 @@ void EnergyOutput::printEnergyConservation(FILE* fplog, int simulationPart, bool
 }
 
 } // namespace gmx
+
+
+
+// ============================================================================
+// PARTIE 3 : Fonction de calcul personnalisée
+// ============================================================================
+
+namespace
+{
+/*! \brief Calcule votre observable personnalisée (lourd)
+ *
+ * Cette fonction n'est appelée QUE lors de l'écriture dans .edr,
+ * pas à chaque pas de temps.
+ *
+ * \param[in] x     Positions atomiques
+ * \param[in] v     Vitesses atomiques (peut être nullptr si non utilisé)
+ * \param[in] mtop  Topologie moléculaire
+ * \param[in] box   Boîte de simulation
+ * \param[in] natoms Nombre d'atomes
+ * \return La valeur de l'observable
+ */
+real calculateCustomObservable(const rvec*       x,
+                              const rvec*       v,
+                              const gmx_mtop_t* mtop,
+                              const matrix      box,
+                              int               natoms)
+{
+    real result = 0.0;
+    
+    // EXEMPLE 1 : Calcul basé sur les positions
+    // (ex: moment dipolaire personnalisé, rayon de giration, etc.)
+    for (int i = 0; i < natoms; i++)
+    {
+        // Votre calcul lourd ici
+        // Exemple simple : somme des coordonnées x
+        result += x[i][XX];
+    }
+    
+    // EXEMPLE 2 : Calcul basé sur les paires d'atomes (O(N²) - très lourd!)
+    // for (int i = 0; i < natoms - 1; i++)
+    // {
+    //     for (int j = i + 1; j < natoms; j++)
+    //     {
+    //         rvec dx;
+    //         pbc_dx(/* pbc structure */, x[i], x[j], dx);
+    //         real r2 = norm2(dx);
+    //         result += 1.0 / sqrt(r2);  // Exemple : potentiel coulombien simplifié
+    //     }
+    // }
+    
+    // EXEMPLE 3 : Calcul basé sur les vitesses
+    // if (v != nullptr)
+    // {
+    //     for (int i = 0; i < natoms; i++)
+    //     {
+    //         result += norm2(v[i]);  // Énergie cinétique alternative
+    //     }
+    // }
+    
+    return result;
+}
+} // namespace anonyme

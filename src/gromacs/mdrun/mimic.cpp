@@ -748,7 +748,11 @@ void gmx::LegacySimulator::do_mimic()
                                                step,
                                                t,
                                                fr_->fcdata.get(),
-                                               awh);
+                                               awh,
+                                               state_->x.rvec_array(),
+                                               state_->v.rvec_array(),
+                                               &topGlobal_,
+                                               state_->box);
 
             if (do_per_step(step, ir->nstlog))
             {
