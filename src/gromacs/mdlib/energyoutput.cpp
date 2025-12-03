@@ -49,6 +49,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <algorithm>
 #include <array>
 #include <string>
 
@@ -60,6 +61,7 @@
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/listed_forces/disre.h"
 #include "gromacs/listed_forces/orires.h"
+#include "gromacs/math/boxmatrix.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
@@ -541,14 +543,51 @@ EnergyOutput::EnergyOutput(ener_file*                fp_ene,
     // Ajouter l'observable personnalisée complexe AVANT do_enxnms()
     if (true)  // Remplacez par votre condition (ex: inputrec.opts.custom_observable)
     {
-        // Créer deux termes : un pour la partie réelle, un pour la partie imaginaire
-        const char* custom_names[2];
-        custom_names[0] = "Custom-Real";
-        custom_names[1] = "Custom-Imag";
+        // Ouvrir le fichier XVG pour les observables complexes
+        // En mode append si on continue un run, sinon en écriture
+        const bool bAppend = (startingBehavior == StartingBehavior::RestartWithAppending);
+        fp_complex_obs_ = gmx_ffopen("complex_obs.xvg", bAppend ? "a" : "w");
         
-        // Réserver l'espace pour les deux composantes
-        iCustomEnergyReal_ = get_ebin_space(ebin_, 1, &custom_names[0], unit_energy);
-        iCustomEnergyImag_ = get_ebin_space(ebin_, 1, &custom_names[1], unit_energy);
+        // Si on append, considérer que le header des q-vecteurs est déjà écrit
+        qvecHeaderWritten_ = bAppend;
+        
+        // Si on append, lire le dernier temps écrit pour éviter les doublons
+        if (bAppend)
+        {
+            FILE* fp_read = gmx_ffopen("complex_obs.xvg", "r");
+            char  line[4096];
+            double last_time = -1.0;
+            
+            while (fgets(line, sizeof(line), fp_read) != nullptr)
+            {
+                // Ignorer les commentaires
+                if (line[0] != '#' && line[0] != '@')
+                {
+                    double t;
+                    if (sscanf(line, "%lf", &t) == 1)
+                    {
+                        last_time = t;
+                    }
+                }
+            }
+            gmx_ffclose(fp_read);
+            
+            lastComplexObsTime_ = last_time;
+            fprintf(stderr, "Restart: dernier temps dans complex_obs.xvg = %.6f ps\n", last_time);
+        }
+        
+        // Écrire le header XVG seulement pour un nouveau run (pas en append)
+        if (!bAppend)
+        {
+            fprintf(fp_complex_obs_, "# Complex Observable n(q,t) - GROMACS\n");
+            fprintf(fp_complex_obs_, "# Time (ps)  Re(q0) Im(q0) Re(q1) Im(q1) ... Re(q49) Im(q49)\n");
+            fprintf(fp_complex_obs_, "@ title \"Complex Observable n(q,t)\"\n");
+            fprintf(fp_complex_obs_, "@ xaxis  label \"Time (ps)\"\n");
+            fprintf(fp_complex_obs_, "@ yaxis  label \"n(q,t)\"\n");
+            fprintf(fp_complex_obs_, "@ TYPE xy\n");
+            fprintf(fp_complex_obs_, "# Q-vectors will be listed after first calculation\n");
+        }
+        fflush(fp_complex_obs_);
     }
 
     /* Note that fp_ene should be valid on the main rank and null otherwise */
@@ -588,6 +627,16 @@ EnergyOutput::EnergyOutput(ener_file*                fp_ene,
 EnergyOutput::~EnergyOutput()
 {
     done_ebin(ebin_);
+    
+    if (fp_complex_obs_ != nullptr)
+    {
+        gmx_ffclose(fp_complex_obs_);
+    }
+    
+    if (qvecs_ != nullptr)
+    {
+        sfree(qvecs_);
+    }
 }
 
 } // namespace gmx
@@ -1166,74 +1215,151 @@ void EnergyOutput::printHeader(FILE* log, int64_t steps, double time)
 
 namespace
 {
-/*! \brief Calcule une observable personnalisée complexe (lourd)
+/*! \brief Calcule une observable complexe personnalisée pour 50 q-vecteurs
  *
- * Cette fonction n'est appelée QUE lors de l'écriture dans .edr,
- * pas à chaque pas de temps.
+ * Cette fonction calcule n(q,t) = Σ exp(iq·r) pour 50 q-vecteurs différents.
+ * Elle génère les q-vecteurs lors du premier appel et les stocke pour réutilisation.
  *
- * \param[in] x     Positions atomiques
- * \param[in] v     Vitesses atomiques (peut être nullptr si non utilisé)
- * \param[in] mtop  Topologie moléculaire
- * \param[in] box   Boîte de simulation
+ * \param[in] x      Tableau des positions atomiques
+ * \param[in] v      Tableau des vitesses atomiques (peut être nullptr si non utilisé)
+ * \param[in] mtop   Topologie moléculaire
+ * \param[in] box    Matrice de la boîte de simulation
  * \param[in] natoms Nombre d'atomes
- * \param[out] realPart  Partie réelle de l'observable
- * \param[out] imagPart  Partie imaginaire de l'observable
+ * \param[out] realParts  Tableau de 50 parties réelles (une par q-vecteur)
+ * \param[out] imagParts  Tableau de 50 parties imaginaires (une par q-vecteur)
+ * \param[in,out] qvecs   Pointeur vers le tableau de q-vecteurs (généré au premier appel)
+ * \param[in,out] nqvec   Nombre de q-vecteurs (retourné au premier appel)
  */
 void calculateComplexObservable(const rvec*       x,
                                const rvec*       v,
                                const gmx_mtop_t* mtop,
                                const matrix      box,
                                int               natoms,
-                               real*             realPart,
-                               real*             imagPart)
+                               real*             realParts,
+                               real*             imagParts,
+                               rvec**            qvecs,
+                               int*              nqvec)
 {
-    real resultReal = 0.0;
-    real resultImag = 0.0;
+    // Paramètres pour la génération des q-points (inspiré de qvec.py)
+    const real q_value = 12.0;  // Valeur cible de |q| en rad/Å (ajustable)
+    const real q_min   = 0.95 * q_value;
+    const real q_max   = 1.05 * q_value;
+    const int  max_qpoints = 50;  // Limite du nombre de q-points à garder
     
-    // EXEMPLE 1 : Observable complexe basée sur les positions
-    // Par exemple : facteur de structure S(q) = sum_i exp(i*q·r_i)
-    // Ici on utilise q = (1, 0, 0) pour simplifier
-    const real qx = 1.0;  // Vecteur d'onde
-    
-    for (int i = 0; i < natoms; i++)
+    // Générer les q-vecteurs seulement au premier appel
+    if (*qvecs == nullptr)
     {
-        // Calcul de exp(i*q·r) = cos(q·r) + i*sin(q·r)
-        real phase = qx * x[i][XX];  // q·r simplifié
-        resultReal += std::cos(phase);  // Partie réelle
-        resultImag += std::sin(phase);  // Partie imaginaire
+        // Calculer la cellule réciproque : rec_cell = 2π * inv(box)^T
+        matrix box_inv, rec_cell;
+        invertBoxMatrix(box, box_inv);
+        
+        // Transposer et multiplier par 2π pour obtenir la cellule réciproque
+        for (int i = 0; i < DIM; i++)
+        {
+            for (int j = 0; j < DIM; j++)
+            {
+                rec_cell[i][j] = box_inv[j][i] * 2.0 * M_PI;
+            }
+        }
+        
+        // Calculer les hauteurs perpendiculaires (pour déterminer la grille)
+        matrix inv_rec_cell;
+        invertBoxMatrix(rec_cell, inv_rec_cell);
+        
+        rvec h;  // Hauteurs perpendiculaires
+        for (int i = 0; i < DIM; i++)
+        {
+            h[i] = 1.0 / std::sqrt(iprod(inv_rec_cell[i], inv_rec_cell[i]));
+        }
+        
+        // Nombre de points de grille nécessaires dans chaque direction
+        ivec N;
+        for (int i = 0; i < DIM; i++)
+        {
+            N[i] = static_cast<int>(std::ceil(q_max / h[i]));
+        }
+        
+        // Générer tous les points de la grille réciproque dans la sphère
+        std::vector<gmx::RVec> temp_qvecs;
+        temp_qvecs.reserve((2 * N[XX] + 1) * (2 * N[YY] + 1) * (2 * N[ZZ] + 1));
+        
+        for (int nx = -N[XX]; nx <= N[XX]; nx++)
+        {
+            for (int ny = -N[YY]; ny <= N[YY]; ny++)
+            {
+                for (int nz = -N[ZZ]; nz <= N[ZZ]; nz++)
+                {
+                    // q = n · rec_cell (produit matriciel)
+                    real qx = nx * rec_cell[XX][XX] + ny * rec_cell[YY][XX] + nz * rec_cell[ZZ][XX];
+                    real qy = nx * rec_cell[XX][YY] + ny * rec_cell[YY][YY] + nz * rec_cell[ZZ][YY];
+                    real qz = nx * rec_cell[XX][ZZ] + ny * rec_cell[YY][ZZ] + nz * rec_cell[ZZ][ZZ];
+                    
+                    // Calculer la norme de q
+                    real q_norm = std::sqrt(qx * qx + qy * qy + qz * qz);
+                    
+                    // Filtrer : garder seulement les q dans [q_min, q_max]
+                    if (q_norm >= q_min && q_norm <= q_max)
+                    {
+                        temp_qvecs.push_back(gmx::RVec(qx, qy, qz));
+                    }
+                }
+            }
+        }
+        
+        // Trier les q-vecteurs par distance à q_value
+        std::sort(temp_qvecs.begin(), temp_qvecs.end(), [q_value](const gmx::RVec& a, const gmx::RVec& b) {
+            real norm_a = std::sqrt(a[XX] * a[XX] + a[YY] * a[YY] + a[ZZ] * a[ZZ]);
+            real norm_b = std::sqrt(b[XX] * b[XX] + b[YY] * b[YY] + b[ZZ] * b[ZZ]);
+            return std::abs(norm_a - q_value) < std::abs(norm_b - q_value);
+        });
+        
+        // Limiter à max_qpoints les plus proches de q_value
+        *nqvec = std::min(static_cast<int>(temp_qvecs.size()), max_qpoints);
+        
+        // Allouer et copier les q-vecteurs
+        snew(*qvecs, *nqvec);
+        for (int i = 0; i < *nqvec; i++)
+        {
+            (*qvecs)[i][XX] = temp_qvecs[i][XX];
+            (*qvecs)[i][YY] = temp_qvecs[i][YY];
+            (*qvecs)[i][ZZ] = temp_qvecs[i][ZZ];
+        }
+        
+        // Debug: Afficher les q-vecteurs sélectionnés
+        fprintf(stderr, "\n=== Generated %d Q-vectors (closest to q_value=%.4f) ===\n", *nqvec, q_value);
+        for (int i = 0; i < *nqvec; i++)
+        {
+            real q_norm = std::sqrt((*qvecs)[i][XX] * (*qvecs)[i][XX] 
+                                   + (*qvecs)[i][YY] * (*qvecs)[i][YY] 
+                                   + (*qvecs)[i][ZZ] * (*qvecs)[i][ZZ]);
+            fprintf(stderr, "q[%2d] = (%8.4f, %8.4f, %8.4f)  |q| = %8.4f\n", 
+                    i, (*qvecs)[i][XX], (*qvecs)[i][YY], (*qvecs)[i][ZZ], q_norm);
+        }
+        fprintf(stderr, "========================================================\n\n");
     }
     
-    // EXEMPLE 2 : Calcul basé sur les paires d'atomes (O(N²) - très lourd!)
-    // for (int i = 0; i < natoms - 1; i++)
-    // {
-    //     for (int j = i + 1; j < natoms; j++)
-    //     {
-    //         rvec dx;
-    //         pbc_dx(/* pbc structure */, x[i], x[j], dx);
-    //         real r = std::sqrt(norm2(dx));
-    //         real phase = qx * dx[XX];
-    //         resultReal += std::cos(phase) / r;
-    //         resultImag += std::sin(phase) / r;
-    //     }
-    // }
-    
-    // EXEMPLE 3 : Calcul basé sur les vitesses (pour observable complexe)
-    // if (v != nullptr)
-    // {
-    //     for (int i = 0; i < natoms; i++)
-    //     {
-    //         real vx = v[i][XX];
-    //         resultReal += vx * std::cos(vx);  // Partie réelle fonction de v
-    //         resultImag += vx * std::sin(vx);  // Partie imaginaire fonction de v
-    //     }
-    // }
-    
-    // EXEMPLE 4 : Module et phase (représentation polaire)
-    // real modulus = std::sqrt(resultReal * resultReal + resultImag * resultImag);
-    // real phase = std::atan2(resultImag, resultReal);
-    
-    *realPart = resultReal;
-    *imagPart = resultImag;
+    // Calculer n(q,t) pour chaque q-vecteur séparément
+// #pragma omp parallel for schedule(static)
+    for (int i = 0; i < *nqvec; i++)
+    { 
+        real resultReal = 0.0;
+        real resultImag = 0.0;
+        
+        const real qx = (*qvecs)[i][XX];
+        const real qy = (*qvecs)[i][YY];
+        const real qz = (*qvecs)[i][ZZ];
+        
+        // Somme sur tous les atomes : n(q,t) = Σ exp(iq·r)
+        for (int j = 0; j < natoms; j++)
+        {
+            real phase = qx * x[j][XX] + qy * x[j][YY] + qz * x[j][ZZ];
+            resultReal += std::cos(phase);
+            resultImag += std::sin(phase);
+        }
+        
+        realParts[i] = resultReal;
+        imagParts[i] = resultImag;
+    }
 }
 } // namespace
 
@@ -1251,16 +1377,50 @@ void EnergyOutput::printStepToEnergyFile(ener_file* fp_ene,
                                          const gmx_mtop_t* mtop,
                                          const matrix      box)
 {
-    // IMPORTANT : Calculer l'observable personnalisée AVANT d'initialiser le frame
-    // car fr.ener pointe vers ebin_->e, donc toute modification après doit être faite avant
-    if (bEne && iCustomEnergyReal_ >= 0 && x != nullptr && mtop != nullptr)
+    // Calculer et écrire les observables complexes dans le fichier XVG
+    if (bEne && fp_complex_obs_ != nullptr && x != nullptr && mtop != nullptr)
     {
-        real realPart, imagPart;
-        calculateComplexObservable(x, v, mtop, box, mtop->natoms, &realPart, &imagPart);
+        // Éviter les doublons lors d'un restart : ne pas écrire si même temps que précédemment
+        if (time == lastComplexObsTime_)
+        {
+            // Frame du checkpoint déjà écrite, skip
+            return;
+        }
         
-        // Ajouter les deux composantes séparément
-        add_ebin(ebin_, iCustomEnergyReal_, 1, &realPart, false);
-        add_ebin(ebin_, iCustomEnergyImag_, 1, &imagPart, false);
+        const int max_qpoints = 50;
+        real realParts[max_qpoints];
+        real imagParts[max_qpoints];
+        
+        // Calculer n(q,t) pour les 50 q-vecteurs
+        calculateComplexObservable(x, v, mtop, box, mtop->natoms, 
+                                   realParts, imagParts, &qvecs_, &nQvecs_);
+        
+        // Écrire le header avec les q-vecteurs après le premier calcul (sauf si déjà écrit en append)
+        if (!qvecHeaderWritten_ && qvecs_ != nullptr)
+        {
+            fprintf(fp_complex_obs_, "# Generated %d q-vectors:\n", nQvecs_);
+            for (int i = 0; i < nQvecs_; i++)
+            {
+                real q_norm = std::sqrt(qvecs_[i][XX] * qvecs_[i][XX] 
+                                       + qvecs_[i][YY] * qvecs_[i][YY] 
+                                       + qvecs_[i][ZZ] * qvecs_[i][ZZ]);
+                fprintf(fp_complex_obs_, "# q[%2d] = (%8.4f, %8.4f, %8.4f)  |q| = %8.4f\n", 
+                        i, qvecs_[i][XX], qvecs_[i][YY], qvecs_[i][ZZ], q_norm);
+            }
+            qvecHeaderWritten_ = true;
+        }
+        
+        // Écrire les données : Time Re(q0) Im(q0) Re(q1) Im(q1) ...
+        fprintf(fp_complex_obs_, "%12.6f", time);
+        for (int i = 0; i < nQvecs_; i++)
+        {
+            fprintf(fp_complex_obs_, " %12.6e %12.6e", realParts[i], imagParts[i]);
+        }
+        fprintf(fp_complex_obs_, "\n");
+        fflush(fp_complex_obs_);
+        
+        // Mémoriser ce temps pour éviter les doublons au prochain restart
+        lastComplexObsTime_ = time;
     }
     
     t_enxframe fr;
@@ -1598,65 +1758,3 @@ void EnergyOutput::printEnergyConservation(FILE* fplog, int simulationPart, bool
 }
 
 } // namespace gmx
-
-
-
-// ============================================================================
-// PARTIE 3 : Fonction de calcul personnalisée
-// ============================================================================
-
-namespace
-{
-/*! \brief Calcule votre observable personnalisée (lourd)
- *
- * Cette fonction n'est appelée QUE lors de l'écriture dans .edr,
- * pas à chaque pas de temps.
- *
- * \param[in] x     Positions atomiques
- * \param[in] v     Vitesses atomiques (peut être nullptr si non utilisé)
- * \param[in] mtop  Topologie moléculaire
- * \param[in] box   Boîte de simulation
- * \param[in] natoms Nombre d'atomes
- * \return La valeur de l'observable
- */
-real calculateCustomObservable(const rvec*       x,
-                              const rvec*       v,
-                              const gmx_mtop_t* mtop,
-                              const matrix      box,
-                              int               natoms)
-{
-    real result = 0.0;
-    
-    // EXEMPLE 1 : Calcul basé sur les positions
-    // (ex: moment dipolaire personnalisé, rayon de giration, etc.)
-    for (int i = 0; i < natoms; i++)
-    {
-        // Votre calcul lourd ici
-        // Exemple simple : somme des coordonnées x
-        result += x[i][XX];
-    }
-    
-    // EXEMPLE 2 : Calcul basé sur les paires d'atomes (O(N²) - très lourd!)
-    // for (int i = 0; i < natoms - 1; i++)
-    // {
-    //     for (int j = i + 1; j < natoms; j++)
-    //     {
-    //         rvec dx;
-    //         pbc_dx(/* pbc structure */, x[i], x[j], dx);
-    //         real r2 = norm2(dx);
-    //         result += 1.0 / sqrt(r2);  // Exemple : potentiel coulombien simplifié
-    //     }
-    // }
-    
-    // EXEMPLE 3 : Calcul basé sur les vitesses
-    // if (v != nullptr)
-    // {
-    //     for (int i = 0; i < natoms; i++)
-    //     {
-    //         result += norm2(v[i]);  // Énergie cinétique alternative
-    //     }
-    // }
-    
-    return result;
-}
-} // namespace anonyme

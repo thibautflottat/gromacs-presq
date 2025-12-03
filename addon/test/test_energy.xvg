@@ -1,0 +1,40 @@
+# This file was created Wed Nov 26 20:24:55 2025
+# Created by:
+#    :-) GROMACS - gmx energy, 2024.2-dev-20251123-b6d934a-dirty-unknown (-:
+# 
+# Executable:   /Users/thibaut/dev/gromacs-presq/addon/test/../../build/bin/gmx
+# Data prefix:  /Users/thibaut/dev/gromacs-presq (source tree)
+# Working dir:  /Users/thibaut/dev/gromacs-presq/addon/test
+# Command line:
+#   gmx energy -f in.edr -o test_energy.xvg
+# gmx energy is part of G R O M A C S:
+#
+# Grunge ROck MAChoS
+#
+@    title "GROMACS Energies"
+@    xaxis  label "Time (ps)"
+@    yaxis  label "(kJ/mol)"
+@TYPE xy
+@ view 0.15, 0.15, 0.75, 0.85
+@ legend on
+@ legend box on
+@ legend loctype view
+@ legend 0.78, 0.8
+@ legend length 2
+@ s0 legend "Bond"
+    0.000000    4.016059
+    0.100000   95.672501
+    0.200000   93.005226
+    0.300000  120.901154
+    0.400000  138.275269
+    0.500000  161.291672
+    0.600000  122.578659
+    0.700000  128.910889
+    0.800000   90.968132
+    0.900000  109.766975
+    1.000000  130.268768
+    1.100000  136.795898
+    1.200000   99.198227
+    1.300000  114.375381
+    1.400000  122.003098
+    1.500000  108.580170

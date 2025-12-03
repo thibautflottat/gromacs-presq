@@ -429,6 +429,17 @@ private:
     //! Add custom observable to energy output (real and imaginary parts)
     int iCustomEnergyReal_ = -1;
     int iCustomEnergyImag_ = -1;
+    
+    //! File handle for complex observable XVG output
+    FILE* fp_complex_obs_ = nullptr;
+    //! Number of q-vectors for complex observable
+    int nQvecs_ = 0;
+    //! Q-vectors for complex observable (stored for header)
+    rvec* qvecs_ = nullptr;
+    //! Whether the q-vector header has been written to XVG
+    bool qvecHeaderWritten_ = false;
+    //! Last time written to complex_obs.xvg (to avoid duplicates on restart)
+    double lastComplexObsTime_ = -1.0;
 };
 
 } // namespace gmx

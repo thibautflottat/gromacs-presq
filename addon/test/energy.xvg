@@ -1,15 +1,15 @@
-# This file was created Sun Nov 23 20:31:00 2025
+# This file was created Tue Nov 25 21:06:32 2025
 # Created by:
-#    :-) GROMACS - gmx energy, 2024.2-dev-20251123-270caaf-dirty-unknown (-:
+#    :-) GROMACS - gmx energy, 2024.2-dev-20251123-b6d934a-dirty-unknown (-:
 # 
 # Executable:   /Users/thibaut/dev/gromacs-presq/addon/test/../../build/bin/gmx
 # Data prefix:  /Users/thibaut/dev/gromacs-presq (source tree)
 # Working dir:  /Users/thibaut/dev/gromacs-presq/addon/test
 # Command line:
-#   gmx energy -f test.edr
+#   gmx energy -f in.edr
 # gmx energy is part of G R O M A C S:
 #
-# GRowing Old MAkes el Chrono Sweat
+# Getting the Right Output Means no Artefacts in Calculating Stuff
 #
 @    title "GROMACS Energies"
 @    xaxis  label "Time (ps)"
@@ -23,6 +23,24 @@
 @ legend length 2
 @ s0 legend "Custom-Real"
 @ s1 legend "Custom-Imag"
-    0.000000  -426.718842  2217.054443
-    0.050000  -426.058746  2217.555664
-    0.100000  -435.570801  2216.607910
+    0.000000    5.177470   -0.000000
+    0.100000    2.423615   -0.000000
+    0.200000    7.761791   -0.000000
+    0.300000    8.547299    0.000000
+    0.400000    6.548945    0.000000
+    0.500000    5.060804   -0.000000
+    0.600000   -1.944922    0.000000
+    0.700000   -8.421215   -0.000000
+    0.800000   -4.307149    0.000000
+    0.900000   -7.244875   -0.000000
+    1.000000   -9.565278    0.000000
+    1.100000   -6.747365   -0.000000
+    1.200000   -2.564386    0.000001
+    1.300000   -4.529047    0.000000
+    1.400000   -8.896141    0.000000
+    1.500000   -2.407415   -0.000000
+    1.600000   -9.999961    0.000000
+    1.700000   -6.088762   -0.000000
+    1.800000   -4.534596    0.000000
+    1.900000   -1.841407   -0.000000
+    2.000000   -2.452077    0.000000

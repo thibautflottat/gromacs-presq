@@ -2,16 +2,16 @@
 ;	File 'mdout.mdp' was generated
 ;	By user: root (501)
 ;	On host: MacBookAir
-;	At date: Sun Nov 23 20:30:16 2025
+;	At date: Wed Nov 26 20:43:26 2025
 ;
 ;	Created by:
-;	   :-) GROMACS - gmx grompp, 2024.2-dev-20251123-270caaf-dirty-unknown (-:
+;	   :-) GROMACS - gmx grompp, 2024.2-dev-20251123-b6d934a-dirty-unknown (-:
 ;	
 ;	Executable:   /Users/thibaut/dev/gromacs-presq/addon/test/../../build/bin/gmx
 ;	Data prefix:  /Users/thibaut/dev/gromacs-presq (source tree)
 ;	Working dir:  /Users/thibaut/dev/gromacs-presq/addon/test
 ;	Command line:
-;	  gmx grompp -f test.mdp -c conf.gro -p topol.top -o test.tpr -maxwarn 10
+;	  gmx grompp -f in.mdp -c conf.gro -p topol.top -o in.tpr -maxwarn 10
 
 ; VARIOUS PREPROCESSING OPTIONS
 ; Preprocessor information: use cpp syntax.
@@ -25,7 +25,7 @@ integrator               = md
 ; Start time and timestep in ps
 tinit                    = 0
 dt                       = 0.001
-nsteps                   = 100
+nsteps                   = 2000
 ; For exact run continuation or redoing part of a run
 init-step                = 0
 ; Part index is updated automatically on checkpointing (keeps files separate)
@@ -63,15 +63,15 @@ rtpi                     = 0.05
 
 ; OUTPUT CONTROL OPTIONS
 ; Output frequency for coords (x), velocities (v) and forces (f)
-nstxout                  = 50
+nstxout                  = 0
 nstvout                  = 0
 nstfout                  = 0
 ; Output frequency for energies to log file and energy file
-nstlog                   = 10
+nstlog                   = 100
 nstcalcenergy            = 100
-nstenergy                = 50
+nstenergy                = 100
 ; Output frequency and precision for .xtc file
-nstxout-compressed       = 0
+nstxout-compressed       = 100
 compressed-x-precision   = 1000
 ; This selects the subset of atoms for the compressed
 ; trajectory file. You can select multiple groups. By
@@ -99,19 +99,19 @@ rlist                    = 1
 
 ; OPTIONS FOR ELECTROSTATICS AND VDW
 ; Method for doing electrostatics
-coulombtype              = PME
+coulombtype              = Cut-off
 coulomb-modifier         = Potential-shift-Verlet
 rcoulomb-switch          = 0
-rcoulomb                 = 1.0
+rcoulomb                 = 1
 ; Relative dielectric constant for the medium and the reaction field
 epsilon-r                = 1
 epsilon-rf               = 0
 ; Method for doing Van der Waals
-vdwtype                  = Cut-off
+vdw-type                 = Cut-off
 vdw-modifier             = Potential-shift-Verlet
 ; cut-off lengths       
 rvdw-switch              = 0
-rvdw                     = 1.0
+rvdw                     = 1
 ; Apply long range dispersion corrections for Energy and Pressure
 DispCorr                 = No
 ; Extension of the potential lookup tables beyond the cut-off
@@ -142,10 +142,10 @@ nsttcouple               = -1
 nh-chain-length          = 10
 print-nose-hoover-chain-variables = no
 ; Groups to couple separately
-tc-grps                  = System
+tc-grps                  = system
 ; Time constant (ps) and reference temperature (K)
-tau_t                    = 0.1
-ref_t                    = 300
+tau-t                    = 0.5
+ref-t                    = 300
 ; pressure coupling     
 pcoupl                   = No
 pcoupltype               = Isotropic
@@ -175,12 +175,12 @@ annealing-temp           =
 ; GENERATE VELOCITIES FOR STARTUP RUN
 gen-vel                  = no
 gen-temp                 = 300
-gen-seed                 = -604251171
+gen-seed                 = -1108394145
 
 ; OPTIONS FOR BONDS    
-constraints              = h-bonds
+constraints              = none
 ; Type of constraint algorithm
-constraint-algorithm     = lincs
+constraint-algorithm     = Lincs
 ; Do not constrain the start configuration
 continuation             = no
 ; Use successive overrelaxation to reduce the number of shake iterations

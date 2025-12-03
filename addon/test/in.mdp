@@ -1,0 +1,12 @@
+integrator = md
+nsteps = 2000
+dt = 0.001
+
+nstlog = 100
+nstenergy = 100
+nstxout-compressed = 100
+
+tcoupl = v-rescale
+ref-t = 300
+tc-grps = system
+tau-t = 0.5
